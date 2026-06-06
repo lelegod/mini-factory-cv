@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Martian+Mono:wght@300;400;500;700&display=swap');
+
+:root {
+  --bg: #0C0C0C;
+  --surface: #111111;
+  --border: #1e1e1e;
+  --muted: #555555;
+  --approved: #22C55E;
+  --defective: #EF4444;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: #E0E0E0;
+  font-family: 'Martian Mono', monospace;
+  overflow: hidden;
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }

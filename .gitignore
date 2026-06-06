@@ -1,4 +1,17 @@
+# Python
 .venv/
 __pycache__/
+*.pyc
+cv/debug_output/
+
+# Environment
 .env
+.env.local
+
+# OS
 .DS_Store
+
+# Node (root level only — dashboard/ has its own .gitignore)
+node_modules/
+
+docs/

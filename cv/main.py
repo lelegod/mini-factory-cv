@@ -38,7 +38,7 @@ def main():
                         if r["defect_type"]:
                             msg += f" → {r['defect_type']}"
                         print(msg)
-                    send_to_dashboard(last_results)
+                    send_to_dashboard(last_results, frame)
                     if DEBUG:
                         save_debug(frame, last_results)
                 else:
