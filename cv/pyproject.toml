@@ -1,0 +1,12 @@
+[project]
+name = "cv"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.4.6",
+    "requests>=2.34.2",
+    "pyrealsense2>=2.58.1; sys_platform == 'linux'",
+    "pupil-apriltags>=1.0.4.post11",
+    "opencv-python>=4.13.0.92",
+]
