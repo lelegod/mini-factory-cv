@@ -105,6 +105,7 @@ name = "cv"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "dotenv" },
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "pupil-apriltags" },
@@ -114,11 +115,23 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "dotenv", specifier = ">=0.9.9" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "opencv-python", specifier = ">=4.13.0.92" },
     { name = "pupil-apriltags", specifier = ">=1.0.4.post11" },
     { name = "pyrealsense2", marker = "sys_platform == 'linux'", specifier = ">=2.58.1" },
     { name = "requests", specifier = ">=2.34.2" },
+]
+
+[[package]]
+name = "dotenv"
+version = "0.9.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dotenv" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b2/b7/545d2c10c1fc15e48653c91efde329a790f2eecfbbf2bd16003b5db2bab0/dotenv-0.9.9-py2.py3-none-any.whl", hash = "sha256:29cf74a087b31dafdb5a446b6d7e11cbce8ed2741540e2339c69fbef92c94ce9", size = 1892, upload-time = "2025-02-19T22:15:01.647Z" },
 ]
 
 [[package]]
@@ -257,6 +270,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a2/a1/a9060a8c4c7eedc0cea171546bd650848956cd00d18068f4366d454c7b77/pyrealsense2-2.58.1.10581-cp312-cp312-manylinux2014_aarch64.whl", hash = "sha256:1226bb06e6965cb9edb2c3d477be2ddadfcb6f60be2f2ec8649c23b19800752b", size = 5829588, upload-time = "2026-05-24T13:37:38.173Z" },
     { url = "https://files.pythonhosted.org/packages/20/e8/dd0a3ea566e584da1798daba9cd4f70ab73f8723fd4ce18f74a6f71c1360/pyrealsense2-2.58.1.10581-cp313-cp313-manylinux1_x86_64.whl", hash = "sha256:9b2450b18495e571ef7b368393c324eb475b071a60e22bba32ea35c34cb1cce0", size = 12391985, upload-time = "2026-05-24T13:37:42.832Z" },
     { url = "https://files.pythonhosted.org/packages/1d/76/22d59fecea7390c6422648e6e65dd2981637a46418123dadfb1a2057b86b/pyrealsense2-2.58.1.10581-cp314-cp314-manylinux1_x86_64.whl", hash = "sha256:ea2453dba5ea03d65deb46bacbbb98aa8d10908d9b831a8b21f84ee0978b1c98", size = 12849819, upload-time = "2026-05-24T13:37:47.555Z" },
+]
+
+[[package]]
+name = "python-dotenv"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/82/ed/0301aeeac3e5353ef3d94b6ec08bbcabd04a72018415dcb29e588514bba8/python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3", size = 50135, upload-time = "2026-03-01T16:00:26.196Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a", size = 22101, upload-time = "2026-03-01T16:00:25.09Z" },
 ]
 
 [[package]]

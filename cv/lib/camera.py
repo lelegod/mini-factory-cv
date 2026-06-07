@@ -1,4 +1,5 @@
 import cv2
+import os
 
 
 def init_camera():
@@ -26,8 +27,9 @@ def init_camera():
         return get_frame, release
 
     except Exception:
-        print("RealSense not available, falling back to webcam")
-        cap = cv2.VideoCapture(0)
+        camera_index = int(os.getenv("CAMERA_INDEX", "0"))
+        print(f"RealSense not available, falling back to webcam (index {camera_index})")
+        cap = cv2.VideoCapture(camera_index)
         if not cap.isOpened():
             raise RuntimeError("No camera found")
 

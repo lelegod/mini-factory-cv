@@ -9,4 +9,5 @@ dependencies = [
     "pyrealsense2>=2.58.1; sys_platform == 'linux'",
     "pupil-apriltags>=1.0.4.post11",
     "opencv-python>=4.13.0.92",
+    "dotenv>=0.9.9",
 ]

@@ -107,8 +107,6 @@ def classify_tag(normalized):
     diff = cv2.absdiff(normalized, reference_img)
     diff = cv2.GaussianBlur(diff, (5, 5), 0)
 
-    print(f"diff mean: {diff.mean():.2f} ({'normal' if diff.mean() < NORMAL_THRESHOLD else 'defective'})")
-
     if diff.mean() < NORMAL_THRESHOLD:
         return "normal", None, diff
 
@@ -122,6 +120,14 @@ def detect_and_classify(frame):
     Returns list of dicts: {tag_id, corners, center, status, defect_type, diff}
     """
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # Remove IR dot pattern noise with median blur
+    gray = cv2.medianBlur(gray, 3)
+
+    # Improve local contrast
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(4, 4))
+    gray = clahe.apply(gray)
+
     tags = detector.detect(gray)
 
     results = []

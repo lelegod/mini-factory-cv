@@ -1,25 +1,27 @@
 import cv2
 import time
 import os
+from dotenv import load_dotenv
+
+# Load env BEFORE importing lib modules that read env vars at import time
+load_dotenv(dotenv_path="../.env")
+
 from lib.camera import init_camera
-from lib.classifier import detect_and_classify, draw_results, load_reference, save_reference
+from lib.classifier import detect_and_classify, load_reference
+from lib.color_detector import find_red_box
 from lib.dashboard import send_to_dashboard
-from lib.debug import save_debug
 
 SCAN_INTERVAL = float(os.getenv("SCAN_INTERVAL", "1.0"))
 SHOW_PREVIEW = os.getenv("SHOW_PREVIEW", "true").lower() == "true"
-DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 
 def main():
     load_reference()
     get_frame, release = init_camera()
 
-    print("Controls: Q = quit | R = save current tag as reference")
-    print(f"Preview: {'on' if SHOW_PREVIEW else 'off'} | Debug: {'on' if DEBUG else 'off'}")
+    print(f"Running. Sending to dashboard every {SCAN_INTERVAL}s. Ctrl+C to stop.")
 
     last_scan = 0
-    last_results = []
 
     try:
         while True:
@@ -29,30 +31,26 @@ def main():
 
             now = time.time()
             if now - last_scan >= SCAN_INTERVAL:
-                last_results = detect_and_classify(frame)
                 last_scan = now
 
-                if last_results:
-                    for r in last_results:
-                        msg = f"Tag {r['tag_id']}: {r['status']}"
-                        if r["defect_type"]:
-                            msg += f" → {r['defect_type']}"
-                        print(msg)
-                    send_to_dashboard(last_results, frame)
-                    if DEBUG:
-                        save_debug(frame, last_results)
-                else:
-                    print("No tags detected")
+                # Crop to red box region
+                crop, bbox = find_red_box(frame)
+
+                # Detect AprilTags inside the crop
+                results = detect_and_classify(crop)
+
+                print(f"Red box: {'found' if bbox else 'not found'} | Tags detected: {len(results)}")
+
+                send_to_dashboard(results, crop)
 
             if SHOW_PREVIEW:
-                display = draw_results(frame.copy(), last_results)
-                cv2.imshow("Mini Factory CV", display)
-
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord("q"):
+                display = frame.copy()
+                if bbox:
+                    x, y, w, h = bbox
+                    cv2.rectangle(display, (x, y), (x + w, y + h), (0, 0, 255), 2)
+                cv2.imshow("Mini Factory CV", display)  # noqa: F821
+                if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
-                elif key == ord("r") and last_results:
-                    save_reference(last_results[0]["normalized"])
 
     finally:
         release()
