@@ -293,6 +293,24 @@ interface ChatMessage {
   text: string;
 }
 
+// Lightweight renderer: **bold** segments and line breaks
+function formatMessage(text: string) {
+  return text.split("\n").map((line, li) => (
+    <span key={li}>
+      {li > 0 && <br />}
+      {line.split(/(\*\*[^*]+\*\*)/g).map((part, pi) =>
+        part.startsWith("**") && part.endsWith("**") ? (
+          <strong key={pi} style={{ color: "#FFF" }}>
+            {part.slice(2, -2)}
+          </strong>
+        ) : (
+          <span key={pi}>{part}</span>
+        )
+      )}
+    </span>
+  ));
+}
+
 function ChatPopup({ context }: { context: string }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
@@ -377,7 +395,7 @@ function ChatPopup({ context }: { context: string }) {
                     border: m.role === "assistant" ? "1px solid #333" : "none",
                   }}
                 >
-                  {m.text}
+                  {m.role === "assistant" ? formatMessage(m.text) : m.text}
                 </div>
               </div>
             ))}

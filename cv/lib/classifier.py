@@ -126,12 +126,11 @@ def classify_tag(normalized):
     best_label, best_err = ranked[0]
     runner_up = ranked[1][1] if len(ranked) > 1 else best_err
 
-    print(f"err — {', '.join(f'{k}:{v:.0f}' for k, v in ranked)}")
+    gap = (runner_up - best_err) / runner_up * 100 if runner_up > 0 else 0
+    print(f"err — {', '.join(f'{k}:{v:.0f}' for k, v in ranked)}  (gap {gap:.0f}%)")
 
-    # Best must be clearly lower error than runner-up (>15% relative gap)
-    if runner_up > 0 and (runner_up - best_err) / runner_up < 0.15:
-        return "defective", "unknown", None
-
+    # Always commit to the lower-error label; the 7-frame vote smooths out
+    # the occasional noisy frame. No "unknown" so the label stays consistent.
     return "defective", best_label, None
 
 
