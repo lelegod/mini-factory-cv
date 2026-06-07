@@ -4,13 +4,14 @@ import os
 from pupil_apriltags import Detector
 
 TAG_SIZE = 100
-MATCH_MIN_SCORE = 0.45    # below this, no template is a confident match
-MATCH_MARGIN = 0.03       # winning template must beat runner-up by this much
+DIFF_MASK_THRESH = 35     # how different two templates must be to count as "discriminating"
 
 detector = Detector(families="tag36h11")
 
 # Template references per defect type, e.g. {"triangle": img, "circle": img}
 templates: dict[str, "np.ndarray"] = {}
+# Mask of pixels where templates disagree (the shape regions). Built on load.
+diff_mask = None
 
 # Temporal smoothing: recent defect_type votes per tag_id
 VOTE_HISTORY = 7
@@ -43,10 +44,30 @@ def load_reference():
             label = fname[len("template_"):-len(".jpg")]
             img = cv2.imread(os.path.join(ref_dir, fname), cv2.IMREAD_GRAYSCALE)
             templates[label] = cv2.resize(img, (TAG_SIZE, TAG_SIZE))
+    _build_diff_mask()
     if templates:
         print(f"Loaded templates: {', '.join(templates)}")
     else:
         print("No templates yet. Show a tag and press 1=triangle, 2=circle to capture.")
+
+
+def _build_diff_mask():
+    """Mask of pixels where the templates differ — i.e. where the shapes are."""
+    global diff_mask
+    diff_mask = None
+    if len(templates) < 2:
+        return
+    imgs = list(templates.values())
+    acc = None
+    for i in range(len(imgs)):
+        for j in range(i + 1, len(imgs)):
+            d = cv2.absdiff(imgs[i], imgs[j])
+            acc = d if acc is None else cv2.max(acc, d)
+    _, m = cv2.threshold(acc, DIFF_MASK_THRESH, 255, cv2.THRESH_BINARY)
+    m = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)), iterations=2)
+    if cv2.countNonZero(m) > 20:
+        diff_mask = m
+        print(f"Diff mask built: {cv2.countNonZero(m)} discriminating pixels")
 
 
 def save_template(crop, label: str):
@@ -79,27 +100,36 @@ def normalize_tag(frame, tag):
 
 def classify_tag(normalized):
     """
-    Match the normalized tag against each defect template using normalized
-    cross-correlation. The best-matching template's label is the defect type.
+    Compare the normalized tag against each template ONLY within the diff mask
+    (the region where templates differ — i.e. the drawn shapes). Lowest mean
+    squared error in that region wins. This ignores the identical 90% of the
+    tag and focuses on the discriminating shape.
 
     Returns (status, defect_type, debug_image)
     """
     if not templates:
         return "defective", "unknown", None
 
-    scores = {}
+    if diff_mask is None:
+        return "defective", "unknown", None
+
+    mask = diff_mask > 0
+    norm_f = normalized.astype(np.float32)
+
+    # Mean squared error within the discriminating region (lower = better match)
+    errors = {}
     for label, tmpl in templates.items():
-        res = cv2.matchTemplate(normalized, tmpl, cv2.TM_CCOEFF_NORMED)
-        scores[label] = float(res.max())
+        sq = (norm_f - tmpl.astype(np.float32)) ** 2
+        errors[label] = float(sq[mask].mean())
 
-    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
-    best_label, best_score = ranked[0]
-    runner_up = ranked[1][1] if len(ranked) > 1 else 0.0
+    ranked = sorted(errors.items(), key=lambda kv: kv[1])  # ascending
+    best_label, best_err = ranked[0]
+    runner_up = ranked[1][1] if len(ranked) > 1 else best_err
 
-    print(f"match — {', '.join(f'{k}:{v:.2f}' for k, v in ranked)}")
+    print(f"err — {', '.join(f'{k}:{v:.0f}' for k, v in ranked)}")
 
-    # Need a confident, clearly-winning match
-    if best_score < MATCH_MIN_SCORE or (best_score - runner_up) < MATCH_MARGIN:
+    # Best must be clearly lower error than runner-up (>15% relative gap)
+    if runner_up > 0 and (runner_up - best_err) / runner_up < 0.15:
         return "defective", "unknown", None
 
     return "defective", best_label, None

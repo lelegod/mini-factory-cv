@@ -114,6 +114,24 @@ function diagnose(tag_id: number, defect_type?: string): Diagnosis {
   return pool[tag_id % pool.length];
 }
 
+function buildContext(images: TagImage[]): string {
+  if (images.length === 0) return "";
+  return images
+    .map((img, i) => {
+      const d = diagnose(img.tag_id, img.defect_type);
+      return [
+        `Defect ${i + 1}:`,
+        `  Tag ID: ${img.tag_id}`,
+        `  Defect type: ${img.defect_type ?? "unknown"}`,
+        `  Problem: ${d.problem}`,
+        `  Explanation: ${d.explanation}`,
+        `  Recommended solution: ${d.solution}`,
+        `  Machine/stage to check: ${d.machine}`,
+      ].join("\n");
+    })
+    .join("\n\n");
+}
+
 function ErrorList({ images }: { images: TagImage[] }) {
   if (images.length === 0) {
     return (
@@ -260,9 +278,157 @@ export default function Dashboard() {
         <span className="text-[10px] tracking-[0.1em]" style={{ color: "#444" }}>System: {online ? "Online" : "Offline"}</span>
       </footer>
 
+      <ChatPopup context={buildContext(data.defective_images)} />
+
       <style jsx global>{`
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        .chat-typing { animation: pulse 1s ease-in-out infinite; letter-spacing: 2px; }
       `}</style>
+    </div>
+  );
+}
+
+interface ChatMessage {
+  role: "user" | "assistant";
+  text: string;
+}
+
+function ChatPopup({ context }: { context: string }) {
+  const [open, setOpen] = useState(false);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: "assistant", text: "Hi — ask me about the current inspection results." },
+  ]);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, open, loading]);
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || loading) return;
+
+    const next = [...messages, { role: "user" as const, text }];
+    setMessages(next);
+    setInput("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: next, context }),
+      });
+      const json = await res.json();
+      setMessages((m) => [
+        ...m,
+        { role: "assistant", text: json.reply ?? json.error ?? "(no response)" },
+      ]);
+    } catch {
+      setMessages((m) => [
+        ...m,
+        { role: "assistant", text: "Connection error — please try again." },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end">
+      <div
+        className="mb-3 flex flex-col w-80 h-96 overflow-hidden origin-bottom-right"
+        style={{
+          background: "#161616",
+          border: "1px solid #333",
+          borderRadius: "8px",
+          boxShadow: "0 12px 40px rgba(0,0,0,0.7)",
+          transition: "opacity 220ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1)",
+          opacity: open ? 1 : 0,
+          transform: open ? "translateY(0) scale(1)" : "translateY(12px) scale(0.92)",
+          pointerEvents: open ? "auto" : "none",
+        }}
+      >
+          {/* Header */}
+          <div
+            className="flex justify-between items-center px-4 py-3"
+            style={{ background: "#1c1c1c", borderBottom: "1px solid #333" }}
+          >
+            <span className="flex items-center gap-2 text-[10px] tracking-[0.2em] uppercase" style={{ color: "#888" }}>
+              <span style={{ color: "#22C55E" }}>✦</span> Inspection Assistant
+            </span>
+            <button onClick={() => setOpen(false)} className="text-[14px] leading-none" style={{ color: "#666" }}>
+              ✕
+            </button>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3">
+            {messages.map((m, i) => (
+              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div
+                  className="max-w-[80%] px-3 py-2 text-[11px] leading-relaxed"
+                  style={{
+                    background: m.role === "user" ? "#22C55E" : "#242424",
+                    color: m.role === "user" ? "#0C0C0C" : "#DDD",
+                    borderRadius: "6px",
+                    border: m.role === "assistant" ? "1px solid #333" : "none",
+                  }}
+                >
+                  {m.text}
+                </div>
+              </div>
+            ))}
+            {loading && (
+              <div className="flex justify-start">
+                <div
+                  className="px-3 py-2 text-[11px]"
+                  style={{ background: "#242424", color: "#888", borderRadius: "6px", border: "1px solid #333" }}
+                >
+                  <span className="chat-typing">●●●</span>
+                </div>
+              </div>
+            )}
+            <div ref={endRef} />
+          </div>
+
+          {/* Input */}
+          <div className="flex items-center gap-2 px-3 py-3" style={{ borderTop: "1px solid #333" }}>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && send()}
+              placeholder="Ask about defects…"
+              className="flex-1 bg-transparent outline-none text-[11px]"
+              style={{ color: "#E0E0E0" }}
+            />
+            <button
+              onClick={send}
+              className="text-[10px] tracking-[0.15em] uppercase px-3 py-1.5"
+              style={{ background: "#22C55E", color: "#0C0C0C", borderRadius: "4px" }}
+            >
+              Send
+            </button>
+          </div>
+      </div>
+
+      {/* Toggle button */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center justify-center w-12 h-12 shadow-lg"
+        style={{ background: "#22C55E", color: "#0C0C0C", borderRadius: "50%" }}
+        aria-label="Toggle chat"
+      >
+        {open ? (
+          <span className="text-[18px] leading-none">✕</span>
+        ) : (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        )}
+      </button>
     </div>
   );
 }
