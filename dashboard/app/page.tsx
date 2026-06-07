@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 interface TagImage {
   tag_id: number;
+  defect_type?: string;
   image_base64: string;
   timestamp: string;
 }
@@ -76,6 +77,9 @@ function ErrorList({ images }: { images: TagImage[] }) {
         <div key={i} className="flex items-start gap-3 text-[11px] leading-relaxed">
           <span className="font-bold flex-shrink-0" style={{ color: "#EF4444" }}>
             #{String(img.tag_id).padStart(2, "0")}
+          </span>
+          <span className="uppercase tracking-wider flex-shrink-0" style={{ color: "#EF4444" }}>
+            [{img.defect_type ?? "unknown"}]
           </span>
           <span style={{ color: "#999" }}>
             Awaiting diagnosis…

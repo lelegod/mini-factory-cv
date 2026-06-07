@@ -28,6 +28,7 @@ def send_to_dashboard(results, frame):
         tag_b64 = encode_image(r["normalized"]) if r.get("normalized") is not None else ""
         defective_images.append({
             "tag_id": r["tag_id"],
+            "defect_type": r.get("defect_type") or "unknown",
             "image_base64": tag_b64,
             "timestamp": "",
         })

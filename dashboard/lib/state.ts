@@ -1,5 +1,6 @@
 export interface TagImage {
   tag_id: number;
+  defect_type?: string;
   image_base64: string;
   timestamp: string;
 }
