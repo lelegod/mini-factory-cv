@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface TagImage {
   tag_id: number;
@@ -64,22 +64,48 @@ function PCBGrid({ images, accent }: { images: TagImage[]; accent: string }) {
 }
 
 interface Diagnosis {
-  stage: string;
-  text: string;
+  problem: string;
+  explanation: string;
+  solution: string;
+  machine: string;
 }
 
 const DIAGNOSIS: Record<string, Diagnosis[]> = {
   triangle: [
-    { stage: "Solder Reflow", text: "Solder bridge detected across adjacent pads — short-circuit risk on signal trace Q3. Route to rework station for reflow." },
-    { stage: "Solder Reflow", text: "Triangular thermal anomaly consistent with overheated transistor junction. Recommend replacing Q2 and inspecting bias network." },
+    {
+      problem: "Solder Bridge Short",
+      explanation: "Excess solder has bridged adjacent pads on signal trace Q3, creating a short-circuit path.",
+      solution: "Route board to rework station and reflow the affected joints; verify continuity after.",
+      machine: "Reflow Oven (Stage 4)",
+    },
+    {
+      problem: "Transistor Overheat",
+      explanation: "Thermal signature indicates an overheated transistor junction at Q2, likely from a biasing fault.",
+      solution: "Replace Q2 and inspect the surrounding bias resistor network for drift.",
+      machine: "Reflow Oven (Stage 4)",
+    },
   ],
   circle: [
-    { stage: "Pick & Place", text: "Displaced surface-mount capacitor (C7) — component offset from footprint exceeds tolerance. Flag for manual placement correction." },
-    { stage: "Solder Paste", text: "Circular void detected in solder fillet — likely cold joint on power rail. Recommend re-soldering and continuity test." },
+    {
+      problem: "Component Misplacement",
+      explanation: "Surface-mount capacitor C7 is offset from its footprint beyond placement tolerance.",
+      solution: "Flag for manual placement correction and re-run optical alignment check.",
+      machine: "Pick & Place (Stage 2)",
+    },
+    {
+      problem: "Cold Solder Joint",
+      explanation: "A void in the solder fillet on the power rail suggests an unreliable cold joint.",
+      solution: "Re-solder the joint and perform a continuity and load test.",
+      machine: "Solder Paste Printer (Stage 1)",
+    },
   ],
   unknown: [
-    { stage: "Optical Inspection", text: "Unclassified surface marking detected; optical confidence below threshold. Route for secondary manual inspection." },
-    { stage: "Final QA", text: "Anomalous region identified — defect signature does not match known fault library. Escalate to QA engineer." },
+    {
+      problem: "Unclassified Anomaly",
+      explanation: "A surface marking was detected but optical confidence is below the classification threshold.",
+      solution: "Route for secondary manual inspection by a QA technician.",
+      machine: "Optical Inspection (Stage 5)",
+    },
   ],
 };
 
@@ -97,23 +123,38 @@ function ErrorList({ images }: { images: TagImage[] }) {
     );
   }
   return (
-    <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-3">
+    <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-5">
       {images.map((img, i) => {
         const d = diagnose(img.tag_id, img.defect_type);
         return (
-          <div key={i} className="flex items-start gap-3 text-[11px] leading-relaxed">
-            <span className="font-bold flex-shrink-0" style={{ color: "#EF4444" }}>
-              #{String(img.tag_id).padStart(2, "0")}
-            </span>
-            <span className="uppercase tracking-wider flex-shrink-0" style={{ color: "#EF4444" }}>
-              [{img.defect_type ?? "unknown"}]
-            </span>
-            <div className="flex flex-col gap-1">
-              <span className="text-[9px] tracking-[0.15em] uppercase" style={{ color: "#F59E0B" }}>
-                ⚙ Stage: {d.stage}
+          <div key={i} className="text-[11px] leading-relaxed">
+            {/* Title row */}
+            <div className="flex items-center gap-2 mb-2">
+              <span className="font-bold" style={{ color: "#EF4444" }}>
+                #{String(img.tag_id).padStart(2, "0")}
               </span>
-              <span style={{ color: "#CCC" }}>{d.text}</span>
+              <span className="font-bold tracking-wide" style={{ color: "#EF4444" }}>
+                {d.problem}
+              </span>
+              <span className="uppercase text-[9px] tracking-wider" style={{ color: "#666" }}>
+                [{img.defect_type ?? "unknown"}]
+              </span>
             </div>
+            {/* Bullet points */}
+            <ul className="flex flex-col gap-1 pl-1" style={{ color: "#AAA" }}>
+              <li className="flex gap-2">
+                <span style={{ color: "#555" }}>•</span>
+                <span><span style={{ color: "#888" }}>Explanation:</span> {d.explanation}</span>
+              </li>
+              <li className="flex gap-2">
+                <span style={{ color: "#555" }}>•</span>
+                <span><span style={{ color: "#888" }}>Solution:</span> {d.solution}</span>
+              </li>
+              <li className="flex gap-2">
+                <span style={{ color: "#555" }}>•</span>
+                <span><span style={{ color: "#888" }}>Check Machine:</span> <span style={{ color: "#F59E0B" }}>{d.machine}</span></span>
+              </li>
+            </ul>
           </div>
         );
       })}
@@ -124,13 +165,18 @@ function ErrorList({ images }: { images: TagImage[] }) {
 export default function Dashboard() {
   const [data, setData] = useState<DashboardState>(EMPTY);
   const [online, setOnline] = useState(false);
+  // Error descriptions update on a slower cadence so they don't flicker
+  const [errorImages, setErrorImages] = useState<TagImage[]>([]);
+  const latest = useRef<TagImage[]>([]);
 
   useEffect(() => {
     const poll = async () => {
       try {
         const res = await fetch("/api/state");
         if (res.ok) {
-          setData(await res.json());
+          const json: DashboardState = await res.json();
+          setData(json);
+          latest.current = json.defective_images;
           setOnline(true);
         }
       } catch {
@@ -139,6 +185,13 @@ export default function Dashboard() {
     };
     poll();
     const interval = setInterval(poll, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Snapshot the error list every 5s
+  useEffect(() => {
+    setErrorImages(latest.current);
+    const interval = setInterval(() => setErrorImages(latest.current), 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -197,7 +250,7 @@ export default function Dashboard() {
                 <span style={{ color: "#22C55E" }}>✦</span> AI Diagnosis
               </span>
             </div>
-            <ErrorList images={data.defective_images} />
+            <ErrorList images={errorImages} />
           </div>
         </div>
       </main>
