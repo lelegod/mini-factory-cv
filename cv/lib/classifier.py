@@ -8,9 +8,9 @@ DIFF_MASK_THRESH = 35     # how different two templates must be to count as "dis
 
 detector = Detector(families="tag36h11")
 
-# Template references per defect type, e.g. {"triangle": img, "circle": img}
-templates: dict[str, "np.ndarray"] = {}
-# Mask of pixels where templates disagree (the shape regions). Built on load.
+# Multiple sample images per defect type, e.g. {"triangle": [img, ...], "circle": [img, ...]}
+templates: dict[str, list] = {}
+# Mask of pixels where the shape regions differ between classes. Built on load.
 diff_mask = None
 
 # Temporal smoothing: recent defect_type votes per tag_id
@@ -33,55 +33,76 @@ def _smooth_defect_type(tag_id: int, defect_type: str) -> str:
 
 
 def load_reference():
-    """Load all template_<type>.jpg files from references/ as defect templates."""
+    """Load template_<label>_<n>.jpg files, grouped by label into sample lists."""
     templates.clear()
     ref_dir = _ref_dir()
     if not os.path.isdir(ref_dir):
         print("No references directory.")
         return
-    for fname in os.listdir(ref_dir):
+    for fname in sorted(os.listdir(ref_dir)):
         if fname.startswith("template_") and fname.endswith(".jpg"):
-            label = fname[len("template_"):-len(".jpg")]
+            stem = fname[len("template_"):-len(".jpg")]
+            label = stem.rsplit("_", 1)[0] if "_" in stem else stem  # strip trailing index
             img = cv2.imread(os.path.join(ref_dir, fname), cv2.IMREAD_GRAYSCALE)
-            templates[label] = cv2.resize(img, (TAG_SIZE, TAG_SIZE))
+            if img is None:
+                continue
+            templates.setdefault(label, []).append(cv2.resize(img, (TAG_SIZE, TAG_SIZE)))
     _build_diff_mask()
     if templates:
-        print(f"Loaded templates: {', '.join(templates)}")
+        counts = ", ".join(f"{k}×{len(v)}" for k, v in templates.items())
+        print(f"Loaded templates: {counts}")
     else:
         print("No templates yet. Show a tag and press 1=triangle, 2=circle to capture.")
 
 
+def _mean_template(label: str):
+    """Average of all samples for a label."""
+    stack = np.stack([t.astype(np.float32) for t in templates[label]])
+    return stack.mean(axis=0)
+
+
 def _build_diff_mask():
-    """Mask of pixels where the templates differ — i.e. where the shapes are."""
+    """Mask of pixels where class mean-templates differ — i.e. where the shapes are."""
     global diff_mask
     diff_mask = None
     if len(templates) < 2:
         return
-    imgs = list(templates.values())
+    means = [_mean_template(label).astype("uint8") for label in templates]
     acc = None
-    for i in range(len(imgs)):
-        for j in range(i + 1, len(imgs)):
-            d = cv2.absdiff(imgs[i], imgs[j])
+    for i in range(len(means)):
+        for j in range(i + 1, len(means)):
+            d = cv2.absdiff(means[i], means[j])
             acc = d if acc is None else cv2.max(acc, d)
     _, m = cv2.threshold(acc, DIFF_MASK_THRESH, 255, cv2.THRESH_BINARY)
     m = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)), iterations=2)
     if cv2.countNonZero(m) > 20:
         diff_mask = m
         print(f"Diff mask built: {cv2.countNonZero(m)} discriminating pixels")
+    else:
+        print("WARNING: diff mask nearly empty — templates too similar. Recapture distinct shapes.")
 
 
 def save_template(crop, label: str):
     ref_dir = _ref_dir()
     os.makedirs(ref_dir, exist_ok=True)
-    path = os.path.join(ref_dir, f"template_{label}.jpg")
+    # Auto-increment sample index for this label
+    existing = [f for f in os.listdir(ref_dir) if f.startswith(f"template_{label}_") and f.endswith(".jpg")]
+    idx = len(existing)
+    path = os.path.join(ref_dir, f"template_{label}_{idx}.jpg")
     cv2.imwrite(path, cv2.resize(crop, (TAG_SIZE, TAG_SIZE)))
-    print(f"Saved template '{label}' -> {path}")
+    print(f"Saved sample '{label}' #{idx} -> {path}")
     load_reference()
 
 
-# Backwards-compat alias used by main.py's R key
-def save_reference(crop):
-    save_template(crop, "triangle")
+def clear_templates():
+    """Delete all template files."""
+    ref_dir = _ref_dir()
+    if os.path.isdir(ref_dir):
+        for f in os.listdir(ref_dir):
+            if f.startswith("template_") and f.endswith(".jpg"):
+                os.remove(os.path.join(ref_dir, f))
+    templates.clear()
+    print("Cleared all templates.")
 
 
 def normalize_tag(frame, tag):
@@ -116,11 +137,14 @@ def classify_tag(normalized):
     mask = diff_mask > 0
     norm_f = normalized.astype(np.float32)
 
-    # Mean squared error within the discriminating region (lower = better match)
+    # For each label, take the BEST (lowest) MSE across all its samples,
+    # measured only within the discriminating region.
     errors = {}
-    for label, tmpl in templates.items():
-        sq = (norm_f - tmpl.astype(np.float32)) ** 2
-        errors[label] = float(sq[mask].mean())
+    for label, samples in templates.items():
+        errors[label] = min(
+            float(((norm_f - s.astype(np.float32)) ** 2)[mask].mean())
+            for s in samples
+        )
 
     ranked = sorted(errors.items(), key=lambda kv: kv[1])  # ascending
     best_label, best_err = ranked[0]

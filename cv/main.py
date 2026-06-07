@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path="../.env")
 
 from lib.camera import init_camera
-from lib.classifier import detect_and_classify, load_reference, save_template
+from lib.classifier import detect_and_classify, load_reference, save_template, clear_templates
 from lib.color_detector import find_red_box
 from lib.dashboard import send_to_dashboard
 
@@ -20,9 +20,10 @@ def main():
     get_frame, release = init_camera()
 
     print(f"Running. Sending to dashboard every {SCAN_INTERVAL}s.")
-    print("Controls (preview window): Q = quit")
-    print("  Show the TRIANGLE tag alone, press 1 to capture its template")
-    print("  Show the CIRCLE tag alone,   press 2 to capture its template")
+    print("Controls (preview window): Q = quit | C = clear all templates")
+    print("  Show the TRIANGLE tag, press 1 repeatedly to add samples (angles/distances)")
+    print("  Show the CIRCLE tag,   press 2 repeatedly to add samples")
+    print("  Capture 5-8 samples of each for best results.")
 
     last_scan = 0
     bbox = None
@@ -62,6 +63,8 @@ def main():
                     save_template(results[0]["normalized"], "triangle")
                 elif key == ord("2") and results:
                     save_template(results[0]["normalized"], "circle")
+                elif key == ord("c"):
+                    clear_templates()
 
     finally:
         release()
