@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path="../.env")
 
 from lib.camera import init_camera
-from lib.classifier import detect_and_classify, load_reference
+from lib.classifier import detect_and_classify, load_reference, save_reference
 from lib.color_detector import find_red_box
 from lib.dashboard import send_to_dashboard
 
@@ -19,9 +19,12 @@ def main():
     load_reference()
     get_frame, release = init_camera()
 
-    print(f"Running. Sending to dashboard every {SCAN_INTERVAL}s. Ctrl+C to stop.")
+    print(f"Running. Sending to dashboard every {SCAN_INTERVAL}s.")
+    print("Controls (preview window): Q = quit | R = save first detected tag as reference")
 
     last_scan = 0
+    bbox = None
+    results = []
 
     try:
         while True:
@@ -49,8 +52,13 @@ def main():
                     x, y, w, h = bbox
                     cv2.rectangle(display, (x, y), (x + w, y + h), (0, 0, 255), 2)
                 cv2.imshow("Mini Factory CV", display)  # noqa: F821
-                if cv2.waitKey(1) & 0xFF == ord("q"):
+
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("q"):
                     break
+                elif key == ord("r") and results:
+                    save_reference(results[0]["normalized"])
+                    print("Saved reference from first detected tag")
 
     finally:
         release()

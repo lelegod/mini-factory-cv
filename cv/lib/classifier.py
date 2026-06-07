@@ -69,29 +69,26 @@ def classify_diff_shape(diff):
     area = cv2.contourArea(largest)
     perimeter = cv2.arcLength(largest, True)
 
-    if perimeter == 0:
+    if perimeter == 0 or area == 0:
         return "unknown", thresh
 
-    # circularity: 1.0 = perfect circle
-    circularity = 4 * np.pi * area / (perimeter ** 2)
+    hull = cv2.convexHull(largest)
 
-    # polygon approximation with tighter epsilon for cleaner shapes
-    approx = cv2.approxPolyDP(largest, 0.03 * perimeter, True)
-    sides = len(approx)
+    # How tightly does the shape fill a min-enclosing circle vs triangle?
+    (_, _), radius = cv2.minEnclosingCircle(hull)
+    circle_area = np.pi * radius * radius
+    circle_fill = area / circle_area if circle_area > 0 else 0
 
-    print(f"shape — circularity: {circularity:.2f}, sides: {sides}, area: {area:.0f}")
+    tri_area, _ = cv2.minEnclosingTriangle(hull)
+    triangle_fill = area / tri_area if tri_area and tri_area > 0 else 0
 
-    if circularity > 0.60:
+    # A circle fills its enclosing circle (~1.0) better than a triangle does (~0.41).
+    # A triangle fills its enclosing triangle (~1.0) better than a circle does (~0.41).
+    print(f"shape — circle_fill: {circle_fill:.2f}, triangle_fill: {triangle_fill:.2f}, area: {area:.0f}")
+
+    if circle_fill >= triangle_fill:
         return "circle", thresh
-
-    if sides == 3:
-        return "triangle", thresh
-
-    # looser fallback — elongated/irregular but low sides = triangle-ish
-    if sides <= 4 and circularity < 0.4:
-        return "triangle", thresh
-
-    return "unknown", thresh
+    return "triangle", thresh
 
 
 def classify_tag(normalized):
