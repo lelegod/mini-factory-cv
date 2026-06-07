@@ -357,7 +357,7 @@ function ChatPopup({ context }: { context: string }) {
   return (
     <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end">
       <div
-        className="mb-3 flex flex-col w-80 h-96 overflow-hidden origin-bottom-right"
+        className="mb-3 flex flex-col w-[420px] h-[560px] overflow-hidden origin-bottom-right"
         style={{
           background: "#161616",
           border: "1px solid #333",
