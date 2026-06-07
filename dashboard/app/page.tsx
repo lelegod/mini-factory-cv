@@ -62,6 +62,30 @@ function PCBGrid({ images, accent }: { images: TagImage[]; accent: string }) {
   );
 }
 
+function ErrorList({ images }: { images: TagImage[] }) {
+  if (images.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-[11px] tracking-widest" style={{ color: "#333" }}>
+        NO ERRORS
+      </div>
+    );
+  }
+  return (
+    <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-2">
+      {images.map((img, i) => (
+        <div key={i} className="flex items-start gap-3 text-[11px] leading-relaxed">
+          <span className="font-bold flex-shrink-0" style={{ color: "#EF4444" }}>
+            #{String(img.tag_id).padStart(2, "0")}
+          </span>
+          <span style={{ color: "#999" }}>
+            Awaiting diagnosis…
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [data, setData] = useState<DashboardState>(EMPTY);
   const [online, setOnline] = useState(false);
@@ -123,22 +147,19 @@ export default function Dashboard() {
         <div className="flex flex-col w-1/2" style={{ gap: "1px", background: "#1a1a1a" }}>
           <div className="flex flex-col flex-1" style={{ background: "#0C0C0C" }}>
             <div className="flex justify-between items-baseline px-5 py-3" style={{ borderBottom: "1px solid #161616" }}>
-              <span className="text-[10px] tracking-[0.2em] uppercase" style={{ color: "#22C55E" }}>Approved</span>
-              <span className="text-[28px] font-bold leading-none" style={{ color: "#22C55E" }}>
-                {String(data.approved_count).padStart(3, "0")}
-              </span>
-            </div>
-            <PCBGrid images={data.approved_images} accent="#22C55E" />
-          </div>
-
-          <div className="flex flex-col flex-1" style={{ background: "#0C0C0C" }}>
-            <div className="flex justify-between items-baseline px-5 py-3" style={{ borderBottom: "1px solid #161616" }}>
               <span className="text-[10px] tracking-[0.2em] uppercase" style={{ color: "#EF4444" }}>Defective</span>
               <span className="text-[28px] font-bold leading-none" style={{ color: "#EF4444" }}>
                 {String(data.defective_count).padStart(3, "0")}
               </span>
             </div>
             <PCBGrid images={data.defective_images} accent="#EF4444" />
+          </div>
+
+          <div className="flex flex-col flex-1" style={{ background: "#0C0C0C" }}>
+            <div className="flex justify-between items-baseline px-5 py-3" style={{ borderBottom: "1px solid #161616" }}>
+              <span className="text-[10px] tracking-[0.2em] uppercase" style={{ color: "#888" }}>Error Descriptions</span>
+            </div>
+            <ErrorList images={data.defective_images} />
           </div>
         </div>
       </main>
