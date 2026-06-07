@@ -4,32 +4,63 @@ import os
 from pupil_apriltags import Detector
 
 TAG_SIZE = 100
-DIFF_THRESHOLD = 30       # pixel diff threshold for shape detection
-DEFECT_MIN_AREA = 50      # minimum contour area to consider a defect shape
-NORMAL_THRESHOLD = 5     # mean diff below this = normal
+MATCH_MIN_SCORE = 0.45    # below this, no template is a confident match
+MATCH_MARGIN = 0.03       # winning template must beat runner-up by this much
 
 detector = Detector(families="tag36h11")
-reference_img = None
+
+# Template references per defect type, e.g. {"triangle": img, "circle": img}
+templates: dict[str, "np.ndarray"] = {}
+
+# Temporal smoothing: recent defect_type votes per tag_id
+VOTE_HISTORY = 7
+_vote_buffers: dict[int, list[str]] = {}
+
+
+def _ref_dir():
+    return os.path.join(os.path.dirname(__file__), "..", "references")
+
+
+def _smooth_defect_type(tag_id: int, defect_type: str) -> str:
+    """Majority vote over recent frames so a single bad frame doesn't flip the label."""
+    buf = _vote_buffers.setdefault(tag_id, [])
+    buf.append(defect_type)
+    if len(buf) > VOTE_HISTORY:
+        buf.pop(0)
+    votes = [v for v in buf if v != "unknown"] or buf
+    return max(set(votes), key=votes.count)
 
 
 def load_reference():
-    global reference_img
-    path = os.path.join(os.path.dirname(__file__), "..", "references", "reference.jpg")
-    if os.path.exists(path):
-        reference_img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-        reference_img = cv2.resize(reference_img, (TAG_SIZE, TAG_SIZE))
-        print(f"Reference loaded from {path}")
+    """Load all template_<type>.jpg files from references/ as defect templates."""
+    templates.clear()
+    ref_dir = _ref_dir()
+    if not os.path.isdir(ref_dir):
+        print("No references directory.")
+        return
+    for fname in os.listdir(ref_dir):
+        if fname.startswith("template_") and fname.endswith(".jpg"):
+            label = fname[len("template_"):-len(".jpg")]
+            img = cv2.imread(os.path.join(ref_dir, fname), cv2.IMREAD_GRAYSCALE)
+            templates[label] = cv2.resize(img, (TAG_SIZE, TAG_SIZE))
+    if templates:
+        print(f"Loaded templates: {', '.join(templates)}")
     else:
-        print("No reference found. Point camera at a clean tag and press R to save one.")
+        print("No templates yet. Show a tag and press 1=triangle, 2=circle to capture.")
 
 
-def save_reference(crop):
-    ref_dir = os.path.join(os.path.dirname(__file__), "..", "references")
+def save_template(crop, label: str):
+    ref_dir = _ref_dir()
     os.makedirs(ref_dir, exist_ok=True)
-    path = os.path.join(ref_dir, "reference.jpg")
-    cv2.imwrite(path, crop)
-    print(f"Reference saved to {path}")
+    path = os.path.join(ref_dir, f"template_{label}.jpg")
+    cv2.imwrite(path, cv2.resize(crop, (TAG_SIZE, TAG_SIZE)))
+    print(f"Saved template '{label}' -> {path}")
     load_reference()
+
+
+# Backwards-compat alias used by main.py's R key
+def save_reference(crop):
+    save_template(crop, "triangle")
 
 
 def normalize_tag(frame, tag):
@@ -46,69 +77,32 @@ def normalize_tag(frame, tag):
     return cv2.warpPerspective(gray, M, (TAG_SIZE, TAG_SIZE))
 
 
-def classify_diff_shape(diff):
-    """Given a diff image, classify the shape of the defect region."""
-    _, thresh = cv2.threshold(diff, DIFF_THRESHOLD, 255, cv2.THRESH_BINARY)
-
-    # clean up noise with morphological closing
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
-
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    if not contours:
-        return "unknown", thresh
-
-    # filter out tiny noise contours, take the largest
-    significant = [c for c in contours if cv2.contourArea(c) >= DEFECT_MIN_AREA]
-    if not significant:
-        return "unknown", thresh
-
-    largest = max(significant, key=cv2.contourArea)
-    area = cv2.contourArea(largest)
-    perimeter = cv2.arcLength(largest, True)
-
-    if perimeter == 0 or area == 0:
-        return "unknown", thresh
-
-    hull = cv2.convexHull(largest)
-
-    # How tightly does the shape fill a min-enclosing circle vs triangle?
-    (_, _), radius = cv2.minEnclosingCircle(hull)
-    circle_area = np.pi * radius * radius
-    circle_fill = area / circle_area if circle_area > 0 else 0
-
-    tri_area, _ = cv2.minEnclosingTriangle(hull)
-    triangle_fill = area / tri_area if tri_area and tri_area > 0 else 0
-
-    # A circle fills its enclosing circle (~1.0) better than a triangle does (~0.41).
-    # A triangle fills its enclosing triangle (~1.0) better than a circle does (~0.41).
-    print(f"shape — circle_fill: {circle_fill:.2f}, triangle_fill: {triangle_fill:.2f}, area: {area:.0f}")
-
-    if circle_fill >= triangle_fill:
-        return "circle", thresh
-    return "triangle", thresh
-
-
 def classify_tag(normalized):
     """
-    Compare normalized tag against reference.
-    Returns (status, defect_type, diff_image)
-      status: "normal" | "defective"
-      defect_type: None | "circle" | "triangle" | "unknown"
+    Match the normalized tag against each defect template using normalized
+    cross-correlation. The best-matching template's label is the defect type.
+
+    Returns (status, defect_type, debug_image)
     """
-    if reference_img is None:
-        return "no_reference", None, None
+    if not templates:
+        return "defective", "unknown", None
 
-    diff = cv2.absdiff(normalized, reference_img)
-    diff = cv2.GaussianBlur(diff, (5, 5), 0)
+    scores = {}
+    for label, tmpl in templates.items():
+        res = cv2.matchTemplate(normalized, tmpl, cv2.TM_CCOEFF_NORMED)
+        scores[label] = float(res.max())
 
-    if diff.mean() < NORMAL_THRESHOLD:
-        return "normal", None, diff
+    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+    best_label, best_score = ranked[0]
+    runner_up = ranked[1][1] if len(ranked) > 1 else 0.0
 
-    defect_type, thresh = classify_diff_shape(diff)
-    return "defective", defect_type, thresh
+    print(f"match — {', '.join(f'{k}:{v:.2f}' for k, v in ranked)}")
+
+    # Need a confident, clearly-winning match
+    if best_score < MATCH_MIN_SCORE or (best_score - runner_up) < MATCH_MARGIN:
+        return "defective", "unknown", None
+
+    return "defective", best_label, None
 
 
 def detect_and_classify(frame):
@@ -131,6 +125,11 @@ def detect_and_classify(frame):
     for tag in tags:
         normalized = normalize_tag(frame, tag)
         status, defect_type, diff = classify_tag(normalized)
+
+        # Smooth the defect type across recent frames for this tag
+        if defect_type is not None:
+            defect_type = _smooth_defect_type(tag.tag_id, defect_type)
+
         results.append({
             "tag_id": tag.tag_id,
             "corners": tag.corners.astype(np.int32),

@@ -63,6 +63,31 @@ function PCBGrid({ images, accent }: { images: TagImage[]; accent: string }) {
   );
 }
 
+interface Diagnosis {
+  stage: string;
+  text: string;
+}
+
+const DIAGNOSIS: Record<string, Diagnosis[]> = {
+  triangle: [
+    { stage: "Solder Reflow", text: "Solder bridge detected across adjacent pads — short-circuit risk on signal trace Q3. Route to rework station for reflow." },
+    { stage: "Solder Reflow", text: "Triangular thermal anomaly consistent with overheated transistor junction. Recommend replacing Q2 and inspecting bias network." },
+  ],
+  circle: [
+    { stage: "Pick & Place", text: "Displaced surface-mount capacitor (C7) — component offset from footprint exceeds tolerance. Flag for manual placement correction." },
+    { stage: "Solder Paste", text: "Circular void detected in solder fillet — likely cold joint on power rail. Recommend re-soldering and continuity test." },
+  ],
+  unknown: [
+    { stage: "Optical Inspection", text: "Unclassified surface marking detected; optical confidence below threshold. Route for secondary manual inspection." },
+    { stage: "Final QA", text: "Anomalous region identified — defect signature does not match known fault library. Escalate to QA engineer." },
+  ],
+};
+
+function diagnose(tag_id: number, defect_type?: string): Diagnosis {
+  const pool = DIAGNOSIS[defect_type ?? "unknown"] ?? DIAGNOSIS.unknown;
+  return pool[tag_id % pool.length];
+}
+
 function ErrorList({ images }: { images: TagImage[] }) {
   if (images.length === 0) {
     return (
@@ -72,20 +97,26 @@ function ErrorList({ images }: { images: TagImage[] }) {
     );
   }
   return (
-    <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-2">
-      {images.map((img, i) => (
-        <div key={i} className="flex items-start gap-3 text-[11px] leading-relaxed">
-          <span className="font-bold flex-shrink-0" style={{ color: "#EF4444" }}>
-            #{String(img.tag_id).padStart(2, "0")}
-          </span>
-          <span className="uppercase tracking-wider flex-shrink-0" style={{ color: "#EF4444" }}>
-            [{img.defect_type ?? "unknown"}]
-          </span>
-          <span style={{ color: "#999" }}>
-            Awaiting diagnosis…
-          </span>
-        </div>
-      ))}
+    <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-3">
+      {images.map((img, i) => {
+        const d = diagnose(img.tag_id, img.defect_type);
+        return (
+          <div key={i} className="flex items-start gap-3 text-[11px] leading-relaxed">
+            <span className="font-bold flex-shrink-0" style={{ color: "#EF4444" }}>
+              #{String(img.tag_id).padStart(2, "0")}
+            </span>
+            <span className="uppercase tracking-wider flex-shrink-0" style={{ color: "#EF4444" }}>
+              [{img.defect_type ?? "unknown"}]
+            </span>
+            <div className="flex flex-col gap-1">
+              <span className="text-[9px] tracking-[0.15em] uppercase" style={{ color: "#F59E0B" }}>
+                ⚙ Stage: {d.stage}
+              </span>
+              <span style={{ color: "#CCC" }}>{d.text}</span>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -160,8 +191,11 @@ export default function Dashboard() {
           </div>
 
           <div className="flex flex-col flex-1" style={{ background: "#0C0C0C" }}>
-            <div className="flex justify-between items-baseline px-5 py-3" style={{ borderBottom: "1px solid #161616" }}>
+            <div className="flex justify-between items-center px-5 py-3" style={{ borderBottom: "1px solid #161616" }}>
               <span className="text-[10px] tracking-[0.2em] uppercase" style={{ color: "#888" }}>Error Descriptions</span>
+              <span className="flex items-center gap-1.5 text-[9px] tracking-[0.15em] uppercase" style={{ color: "#666" }}>
+                <span style={{ color: "#22C55E" }}>✦</span> AI Diagnosis
+              </span>
             </div>
             <ErrorList images={data.defective_images} />
           </div>
